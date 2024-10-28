@@ -1,0 +1,15 @@
+# This file is where you define your pipelines. You can define multiple.
+# For more information on multiple pipelines, see the documentation:
+#   https://www.elastic.co/guide/en/logstash/current/multiple-pipelines.html
+
+#- pipeline.id: main
+#  path.config: "/etc/logstash/conf.d/*.conf"
+
+- pipeline.id: logs2elastic
+  path.config: "/etc/logstash/conf.d/logs2elastic/*.conf"
+
+#- pipeline.id: beats2elastic
+#  path.config: "/etc/logstash/conf.d/beats2elastic/*.conf"
+
+- pipeline.id: curl2elastic
+  path.config: "/etc/logstash/conf.d/curl2elastic/*.conf"

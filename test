@@ -1,0 +1,13 @@
+  ruby {
+    init => '
+      @fields_to_check = ["field1", "another_field", "yet_another"] # Replace with your actual field names
+      @regex = /.*pipe.*/
+    '
+    code => '
+      @fields_to_check.each do |field|
+        if event.get(field).is_a?(String) && event.get(field) =~ @regex
+          event.remove(field)
+        end
+      end
+    '
+  }

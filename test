@@ -11,3 +11,18 @@
       end
     '
   }
+
+
+
+
+filter {
+  if [type] == "paloalto" {
+    grok {
+      match => {
+        "message" => [
+          "<%{POSINT:syslog_priority}>%{SYSLOGTIMESTAMP:syslog_timestamp} %{HOSTNAME:hostname} %{GREEDYDATA:paloalto_message}"
+        ]
+      }
+    }
+  }
+}

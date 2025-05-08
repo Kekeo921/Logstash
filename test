@@ -26,3 +26,33 @@ filter {
     }
   }
 }
+
+
+  if [key_value_pairs] {
+    kv {
+      source => "key_value_pairs"
+      field_split => ", "
+      value_split => "="
+      trim => " "
+    }
+  }
+  if [cmd_set_data] {
+    ruby {
+      init => '
+        @command_parts_regex = /Cmd(AV|ArgAV)=([^ ]+)/
+      '
+      code => '
+        command_parts = event.get("cmd_set_data").scan(@command_parts_regex)
+        cisco_command_parts = []
+        command_parts.each do |part_type, part_value|
+          cisco_command_parts << part_value unless part_type == "AV" && part_value == "show"
+        end
+        event.set("cisco_command", cisco_command_parts.join(" "))
+      '
+    }
+    mutate {
+      remove_field => "cmd_set_data"
+    }
+  }
+  mutate {
+    remove_field => "key_value_pairs"

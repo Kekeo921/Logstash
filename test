@@ -57,7 +57,7 @@ filter {
   mutate {
     remove_field => "key_value_pairs"
 
-
+([a-z0-9\-]+-\d+-\d+)(?=\.[a-z0-9\-]+(?:\.[a-z0-9\-]+)*$)
 
 
 net.core.somaxconn=2048

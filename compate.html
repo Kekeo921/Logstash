@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Name Comparison Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for better aesthetics and responsiveness */
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to top to allow scrolling */
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            max-width: 900px;
+            width: 100%;
+        }
+        textarea {
+            min-height: 150px;
+            resize: vertical;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 1rem;
+            line-height: 1.5;
+        }
+        button {
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        table {
+            width: 100%;
+            border-collapse: separate; /* Use separate to allow border-radius on cells */
+            border-spacing: 0;
+            margin-top: 20px;
+            overflow: hidden; /* Ensures rounded corners apply to content */
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            background-color: #f9fafb;
+            font-weight: 600;
+            color: #374151;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 0.875rem;
+        }
+        td {
+            background-color: #ffffff;
+            color: #4b5563;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        /* Rounded corners for the first and last cells in the header and body */
+        th:first-child {
+            border-top-left-radius: 8px;
+        }
+        th:last-child {
+            border-top-right-radius: 8px;
+        }
+        tr:last-child td:first-child {
+            border-bottom-left-radius: 8px;
+        }
+        tr:last-child td:last-child {
+            border-bottom-right-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Name Comparison Tool</h1>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div>
+                <label for="table1Names" class="block text-gray-700 text-sm font-medium mb-2">Names for Table 1 (one per line or comma-separated):</label>
+                <textarea id="table1Names" class="w-full focus:ring-blue-500 focus:border-blue-500" placeholder="e.g.,&#10;name1&#10;name2&#10;name3"></textarea>
+            </div>
+            <div>
+                <label for="table2Names" class="block text-gray-700 text-sm font-medium mb-2">Names for Table 2 (one per line or comma-separated):</label>
+                <textarea id="table2Names" class="w-full focus:ring-blue-500 focus:border-blue-500" placeholder="e.g.,&#10;name2&#10;name3&#10;name4"></textarea>
+            </div>
+            <div>
+                <label for="table3Names" class="block text-gray-700 text-sm font-medium mb-2">Names for Table 3 (one per line or comma-separated):</label>
+                <textarea id="table3Names" class="w-full focus:ring-blue-500 focus:border-blue-500" placeholder="e.g.,&#10;name3&#10;name4&#10;name5"></textarea>
+            </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-4 mb-6">
+            <button id="compareButton" class="w-full sm:w-1/2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75">
+                Compare Names
+            </button>
+            <button id="saveCsvButton" class="w-full sm:w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75" style="display: none;">
+                Save to CSV
+            </button>
+        </div>
+
+        <div id="results" class="mt-8">
+            <!-- Results will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('compareButton').addEventListener('click', compareNames);
+        document.getElementById('saveCsvButton').addEventListener('click', saveToCsv);
+
+        // Global variable to store the comparison data for CSV export
+        let comparisonData = [];
+
+        function compareNames() {
+            // Get raw input from text areas
+            const table1Input = document.getElementById('table1Names').value;
+            const table2Input = document.getElementById('table2Names').value;
+            const table3Input = document.getElementById('table3Names').value; // Get input for Table 3
+            const resultsDiv = document.getElementById('results');
+            const saveCsvButton = document.getElementById('saveCsvButton');
+
+            // Clear previous results
+            resultsDiv.innerHTML = '';
+            comparisonData = []; // Reset comparison data
+
+            // Process input strings into arrays of cleaned names
+            const names1 = processInput(table1Input);
+            const names2 = processInput(table2Input);
+            const names3 = processInput(table3Input); // Process names for Table 3
+
+            // Create Sets for efficient lookup
+            const set1 = new Set(names1);
+            const set2 = new Set(names2);
+            const set3 = new Set(names3); // Create set for Table 3
+
+            // Get all unique names from all three lists
+            const allUniqueNames = Array.from(new Set([...names1, ...names2, ...names3]));
+
+            // Sort names alphabetically for consistent output
+            allUniqueNames.sort((a, b) => a.localeCompare(b));
+
+            // Build the HTML table
+            let tableHtml = `
+                <table class="min-w-full bg-white rounded-lg shadow-sm">
+                    <thead>
+                        <tr>
+                            <th class="py-3 px-4">Table 1</th>
+                            <th class="py-3 px-4">Table 2</th>
+                            <th class="py-3 px-4">Table 3</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            if (allUniqueNames.length === 0) {
+                tableHtml += `
+                    <tr>
+                        <td colspan="3" class="text-center py-4 text-gray-500">No names entered to compare.</td>
+                    </tr>
+                `;
+                saveCsvButton.style.display = 'none'; // Hide save button if no data
+            } else {
+                allUniqueNames.forEach(name => {
+                    const inTable1 = set1.has(name) ? name : '';
+                    const inTable2 = set2.has(name) ? name : '';
+                    const inTable3 = set3.has(name) ? name : ''; // Check for presence in Table 3
+
+                    tableHtml += `
+                        <tr>
+                            <td class="py-3 px-4">${inTable1}</td>
+                            <td class="py-3 px-4">${inTable2}</td>
+                            <td class="py-3 px-4">${inTable3}</td>
+                        </tr>
+                    `;
+                    // Store data for CSV export, now with three columns
+                    comparisonData.push([inTable1, inTable2, inTable3]);
+                });
+                saveCsvButton.style.display = 'block'; // Show save button if there's data
+            }
+
+            tableHtml += `
+                    </tbody>
+                </table>
+            `;
+
+            resultsDiv.innerHTML = tableHtml;
+        }
+
+        /**
+         * Processes a raw input string into an array of cleaned, non-empty names.
+         * Handles both newline and comma-separated inputs.
+         * @param {string} inputString - The raw string from the textarea.
+         * @returns {string[]} An array of cleaned names.
+         */
+        function processInput(inputString) {
+            // Replace newlines with commas, then split by comma, and trim each part.
+            // Filter out any empty strings that result from multiple delimiters or leading/trailing commas.
+            return inputString
+                .split(/[\n,]+/) // Split by newline or comma
+                .map(name => name.trim()) // Trim whitespace from each name
+                .filter(name => name !== ''); // Remove empty strings
+        }
+
+        /**
+         * Converts the comparison data to CSV format and triggers a download.
+         */
+        function saveToCsv() {
+            if (comparisonData.length === 0) {
+                // Optionally, show a message to the user that there's no data to save.
+                // For this simple case, we'll just do nothing.
+                return;
+            }
+
+            // Add headers to the CSV data, now with "Table 3"
+            const headers = ["Table 1", "Table 2", "Table 3"];
+            const csvRows = [
+                headers.join(','), // CSV header row
+                ...comparisonData.map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')) // CSV data rows, handling commas and quotes
+            ];
+
+            const csvString = csvRows.join('\n');
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+
+            if (link.download !== undefined) { // Feature detection for download attribute
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'name_comparison.csv');
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } else {
+                // Fallback for browsers that don't support the download attribute (less common now)
+                console.error("Your browser does not support the 'download' attribute. Please save the content manually.");
+                // You could open a new window with the CSV content here as a fallback
+                window.open('data:text/csv;charset=utf-8,' + encodeURIComponent(csvString));
+            }
+        }
+    </script>
+</body>
+</html>

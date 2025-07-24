@@ -1,0 +1,146 @@
+#!/bin/bash
+
+# =========================================================================
+# Configuration Parameters
+# =========================================================================
+NGINX_CONF_DIR="/etc/nginx/conf.d"
+NGINX_UPSTREAM_FILE="${NGINX_CONF_DIR}/syslog_backends.conf"
+NGINX_UPSTREAM_TMP_FILE="${NGINX_CONF_DIR}/.syslog_backends.conf.tmp" # Temporary file for atomic updates
+NGINX_CMD="/usr/sbin/nginx" # Path to your NGINX binary
+NGINX_RELOAD_CMD="sudo ${NGINX_CMD} -s reload" # Command to reload NGINX
+NGINX_TEST_CMD="sudo ${NGINX_CMD} -t -c /etc/nginx/nginx.conf" # Command to test NGINX config
+LOG_FILE="/var/log/nginx_health_check.log" # Script's own log file
+
+# List of backend servers to monitor (IP:PORT format)
+# IMPORTANT: Adjust these to your actual backend server IPs and syslog port (e.g., Logstash port)
+BACKEND_SERVERS=(
+    "192.168.1.101:1514" # Example: Replace with your backend_syslog_ip_1
+    "192.168.1.102:1514" # Example: Replace with your backend_syslog_ip_2
+)
+
+# Health check parameters
+# CHECK_TIMEOUT is for the 'timeout' command, not netcat
+CHECK_TIMEOUT=2  # How long 'timeout' command waits for connection attempt (seconds)
+FAILURE_THRESHOLD=3 # How many consecutive health check failures to mark a server 'down'
+SUCCESS_THRESHOLD=2 # How many consecutive health check successes to mark a server 'up'
+
+# Directory to store persistent state for each backend (e.g., consecutive fails/successes)
+STATE_DIR="/var/run/nginx_health_check_state"
+# =========================================================================
+
+# --- Helper Functions ---
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+}
+
+# Function to perform a health check and update state
+check_backend_status() {
+    local backend_ip_port=$1
+    local server_ip=$(echo "$backend_ip_port" | cut -d':' -f1)
+    local server_port=$(echo "$backend_ip_port" | cut -d':' -f2)
+    local state_file="${STATE_DIR}/$(echo "$backend_ip_port" | tr ':' '_').state"
+
+    local current_status="UNKNOWN" # Possible states: UP, DOWN, UNKNOWN
+    local consecutive_fails=0
+    local consecutive_successes=0
+
+    # Ensure state directory exists
+    mkdir -p "$STATE_DIR"
+
+    # Read current state from file
+    if [ -f "$state_file" ]; then
+        IFS=' ' read -r current_status consecutive_fails consecutive_successes <<< "$(cat "$state_file")"
+    fi
+
+    # Perform a TCP connection check using bash's /dev/tcp and the 'timeout' command
+    # `timeout` command ensures the connection attempt doesn't hang indefinitely.
+    # `cat /dev/null` is used to trigger the connection and immediately close it.
+    # `2>/dev/null` suppresses error messages from cat/timeout/bash to stderr.
+    if timeout "$CHECK_TIMEOUT" bash -c "cat < /dev/null > /dev/tcp/${server_ip}/${server_port}" 2>/dev/null; then
+        # Health check succeeded
+        log "Probe for $backend_ip_port: SUCCESS"
+        consecutive_fails=0 # Reset fails on success
+        ((consecutive_successes++)) # Increment successes
+
+        if [ "$current_status" == "DOWN" ] && [ "$consecutive_successes" -ge "$SUCCESS_THRESHOLD" ]; then
+            current_status="UP"
+            log "Backend $backend_ip_port is now UP after $consecutive_successes consecutive successes."
+        elif [ "$current_status" == "UNKNOWN" ]; then
+            current_status="UP" # Initial state for a successful first probe
+        fi
+    else
+        # Health check failed
+        log "Probe for $backend_ip_port: FAILED"
+        consecutive_successes=0 # Reset successes on failure
+        ((consecutive_fails++)) # Increment fails
+
+        if [ "$current_status" == "UP" ] && [ "$consecutive_fails" -ge "$FAILURE_THRESHOLD" ]; then
+            current_status="DOWN"
+            log "Backend $backend_ip_port is now DOWN after $consecutive_fails consecutive failures."
+        elif [ "$current_status" == "UNKNOWN" ]; then
+            current_status="DOWN" # Initial state for a failed first probe
+        fi
+    fi
+
+    # Save new state to file
+    echo "$current_status $consecutive_fails $consecutive_successes" > "$state_file"
+
+    echo "$current_status" # Return the determined status
+}
+
+# --- Main Logic ---
+log "Starting NGINX health check run."
+
+GENERATED_UPSTREAM_CONFIG="upstream syslog_tcp_backend_servers {\n"
+ANY_SERVER_UP=false
+
+# Iterate through all configured backend servers
+for server_entry in "${BACKEND_SERVERS[@]}"; do
+    STATUS=$(check_backend_status "$server_entry") # Get status (UP or DOWN)
+
+    if [ "$STATUS" == "UP" ]; then
+        GENERATED_UPSTREAM_CONFIG+="    server $server_entry;\n" # Add server without 'down' flag
+        ANY_SERVER_UP=true
+    elif [ "$STATUS" == "DOWN" ]; then
+        GENERATED_UPSTREAM_CONFIG+="    server $server_entry down; # Marked down by health check script\n" # Add with 'down' flag
+    else
+        # Fallback for UNKNOWN state or script error, treat as down to be safe
+        GENERATED_UPSTREAM_CONFIG+="    server $server_entry down; # UNKNOWN status, defaulting to down\n"
+    fi
+done
+
+GENERATED_UPSTREAM_CONFIG+="}\n" # Close the upstream block
+
+# Ensure the upstream file exists and read its current content for comparison
+# Using 'cat' with 2>/dev/null to avoid error if file doesn't exist yet
+CURRENT_UPSTREAM_CONFIG=$(cat "$NGINX_UPSTREAM_FILE" 2>/dev/null || echo "")
+
+# Compare the newly generated config with the currently active one
+if [ "$GENERATED_UPSTREAM_CONFIG" != "$CURRENT_UPSTREAM_CONFIG" ]; then
+    log "NGINX upstream configuration has changed. Attempting to apply new config."
+
+    # Write new config to a temporary file for atomic update
+    echo -e "$GENERATED_UPSTREAM_CONFIG" > "$NGINX_UPSTREAM_TMP_FILE"
+
+    # Test NGINX configuration for syntax errors before reloading
+    if $NGINX_TEST_CMD; then
+        # If test is successful, move the temporary file to the actual config file
+        # This makes the update atomic, preventing NGINX from reading a half-written file
+        sudo mv "$NGINX_UPSTREAM_TMP_FILE" "$NGINX_UPSTREAM_FILE"
+        log "Successfully updated $NGINX_UPSTREAM_FILE."
+
+        # Reload NGINX to apply changes
+        if $NGINX_RELOAD_CMD; then
+            log "NGINX reloaded successfully with updated upstream configuration."
+        else
+            log "ERROR: NGINX reload FAILED! Previous configuration retained. Check NGINX logs for details."
+        fi
+    else
+        log "ERROR: Generated NGINX configuration test FAILED. Not applying changes. Temporary file '$NGINX_UPSTREAM_TMP_FILE' retained for inspection."
+        # If test fails, do not move or reload, and leave the temporary file for debugging
+    fi
+else
+    log "NGINX upstream configuration is up to date. No reload needed."
+fi
+
+log "NGINX health check run finished."

@@ -90,3 +90,21 @@ net.ipv4.tcp_max_tw_buckets = 262144
 
 # Increase maximum backlog for listening sockets
 net.core.somaxconn = 65535
+
+
+
+filter {
+  ruby {
+    init => "require 'base64'"
+    code => "
+      begin
+        # Decode the 'message' field and save it to 'decoded_message'
+        if event.get('message')
+          event.set('decoded_message', Base64.decode64(event.get('message')))
+        end
+      rescue => e
+        event.tag('_base64_decode_failure')
+      end
+    "
+  }
+}

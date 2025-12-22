@@ -126,3 +126,18 @@ filter {
     "
   }
 }
+
+
+
+
+if [destination_ip] {
+    # Check to ensure it's not a private/internal IP address
+    if [destination_ip] !~ /^10\./ and [destination_ip] !~ /^192\.168\./ and [destination_ip] !~ /^172\.(1[6-9]|2[0-9]|3[0-1])\./ {
+      geoip {
+        source => "destination_ip"
+        target => "geo"
+        fields => ["city_name", "country_name", "location", "region_name"]
+      }
+    }
+  }
+}

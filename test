@@ -148,3 +148,11 @@ wget https://artifacts.elastic.co/downloads/logstash/logstash-8.18.3-linux-x86_6
     bin/logstash-plugin install logstash-codec-sflow
     bin/logstash-plugin prepare-offline-pack --output ../sflow-8-18-3.zip logstash-codec-sflow
     cd ..
+
+bin/logstash-plugin prepare-offline-pack --output $(Build.ArtifactStagingDirectory)/sflow-8-18-3.zip logstash-codec-sflow
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)/sflow-8-18-3.zip'
+    ArtifactName: 'logstash-plugin-pack'
+    publishLocation: 'Container'

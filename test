@@ -141,3 +141,10 @@ if [destination_ip] {
     }
   }
 }
+
+wget https://artifacts.elastic.co/downloads/logstash/logstash-8.18.3-linux-x86_64.tar.gz
+    tar -xzf logstash-8.18.3-linux-x86_64.tar.gz
+    cd logstash-8.18.3
+    bin/logstash-plugin install logstash-codec-sflow
+    bin/logstash-plugin prepare-offline-pack --output ../sflow-8-18-3.zip logstash-codec-sflow
+    cd ..
